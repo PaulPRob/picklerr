@@ -1,13 +1,37 @@
 # RR_pickle_picker
 
-Pickleball round-robin doubles scheduler with a PyQt6 desktop GUI, for
-4–32 players.
+Pickleball round-robin doubles scheduler for 4–32 players, available as
+a PyQt6 desktop GUI and as a Streamlit web app. Both front ends share
+the same scheduling engine and export helpers.
 
-## Run
+## Run the desktop app
 
 ```bash
 .venv/bin/python RR_pickle_picker.py
 ```
+
+## Run the web app locally
+
+```bash
+.venv/bin/streamlit run streamlit_app.py
+```
+
+## Deploy the web app on Streamlit Community Cloud
+
+1. Push this repository to GitHub.
+2. Go to <https://share.streamlit.io>, sign in with GitHub, and click
+   **Create app**.
+3. Pick this repository and branch, set **Main file path** to
+   `streamlit_app.py`, and deploy. Dependencies come from
+   `requirements.txt` (Streamlit + openpyxl only — PyQt6 is not needed
+   on the server; the web app stubs it out for the shared export code).
+
+Notes on the web version: the roster lives in the browser session (it
+is seeded from `players.txt` if one exists next to the script, but the
+web app never writes to it, so visitors don't see each other's rosters).
+Native Print/PDF is desktop-only; the web app instead offers the
+**Phone (HTML)** and **Excel** downloads plus a **Printable (HTML)**
+download you can print (or save as PDF) from the browser.
 
 ## Run the tests
 
@@ -63,10 +87,14 @@ spread as evenly as possible.
 
 | File | Purpose |
 | --- | --- |
-| `RR_pickle_picker.py` | The GUI application |
+| `RR_pickle_picker.py` | The desktop GUI application (PyQt6) |
+| `streamlit_app.py` | The web app (Streamlit) — same engine and exports |
 | `scheduler.py` | Scheduling/optimisation engine (no GUI dependency) |
 | `export.py` | Print, PDF, Excel and phone-friendly HTML export helpers |
+| `requirements.txt` | Web-app dependencies for Streamlit Cloud |
+| `.streamlit/config.toml` | Streamlit theme (green accent) |
 | `test_scheduler.py` | Engine tests: structure, bye fairness, optimisation quality |
 | `test_export.py` | PDF/Excel export tests |
-| `test_gui.py` | GUI smoke tests (run headless) |
+| `test_gui.py` | Desktop GUI smoke tests (run headless) |
+| `test_streamlit_app.py` | Web app smoke tests (headless AppTest) |
 | `players.txt` | Your saved roster (created after first player is added) |
