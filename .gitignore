@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.claude/
+*.xlsx
+*.pdf
+*.html
+*:Zone*
+*:sec*
+*.egg-info/
