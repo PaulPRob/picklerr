@@ -107,10 +107,10 @@ def _sidebar() -> None:
         if name:
             if name.lower() in {n.lower() for n in roster}:
                 st.sidebar.warning(f"“{name}” is already in the list.")
-            elif len(roster) >= scheduler.MAX_PLAYERS:
-                st.sidebar.warning(
-                    f"Maximum of {scheduler.MAX_PLAYERS} players.")
             else:
+                # The roster itself has no size cap (players.txt can hold
+                # the whole club); MAX_PLAYERS only limits how many can be
+                # ticked to play, enforced at Generate time.
                 roster[name] = True
                 st.session_state[f"chk_{name}"] = True
 
@@ -140,6 +140,10 @@ def _sidebar() -> None:
     n = len(playing)
     if n == 0:
         st.sidebar.caption("No players ticked.")
+    elif n > scheduler.MAX_PLAYERS:
+        st.sidebar.warning(
+            f"{n} ticked — at most {scheduler.MAX_PLAYERS} can play. "
+            f"Untick {n - scheduler.MAX_PLAYERS} before generating.")
     else:
         courts, byes = num_courts(n), num_byes(n)
         st.sidebar.markdown(

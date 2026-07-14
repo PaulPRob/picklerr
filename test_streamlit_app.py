@@ -42,6 +42,21 @@ def test_generate_rejects_too_few_players():
     assert any("Tick between" in e.value for e in at.sidebar.error)
 
 
+def test_add_player_to_large_roster():
+    """A roster bigger than MAX_PLAYERS (e.g. a whole club in players.txt)
+    must not block adding more names — the 32 cap only applies to how
+    many are ticked to play."""
+    at = AppTest.from_file("streamlit_app.py", default_timeout=60)
+    at.session_state["roster"] = {f"Member{i}": False for i in range(1, 62)}
+    at.run()
+    at.text_input(key="new_player").input("Zoe")
+    at.button(key="FormSubmitter:add_player-Add").click()
+    at.run()
+    assert not at.exception
+    assert "Zoe" in at.session_state["roster"]
+    assert not at.sidebar.warning  # no "maximum players" complaint
+
+
 def test_add_and_remove_player():
     at = _app().run()
     at.text_input(key="new_player").input("Zoe")
