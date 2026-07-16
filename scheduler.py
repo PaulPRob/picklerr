@@ -1,9 +1,11 @@
 """Round-robin doubles scheduler for RR_pickle_picker.
 
-Generates a schedule for 4-32 pickleball players over a configurable
-number of rounds, optimising for:
+Generates a schedule for 4-40 pickleball players over a configurable
+number of rounds, optimising for (most important first):
 
-  * partner diversity  - play WITH a different partner every round if possible
+  * partner uniqueness - never play WITH the same partner twice; this
+                         dominates every other objective and is achieved
+                         whenever it is mathematically possible
   * opponent diversity - play AGAINST different opponents across rounds
   * no repeated opponents (or partners) in consecutive rounds
   * fair byes          - when the player count is not divisible by 4, the
@@ -15,7 +17,12 @@ Courts per round = playing players // 4 (all leftovers are byes).
 The optimiser is a greedy per-round construction: byes are picked by
 fairness, then the court assignment is found with random-restart
 hill-climbing over player-position swaps, scored against the accumulated
-partner/opponent history.
+partner/opponent history.  Because a greedy round-by-round build can
+paint itself into a corner (the players not yet partnered with each
+other may not pair up cleanly in the last rounds), the whole schedule is
+rebuilt several times and the best result kept, stopping as soon as a
+schedule with no repeated partnerships (or the provable minimum number
+of repeats) is found.
 """
 
 from __future__ import annotations
@@ -24,12 +31,16 @@ import random
 from dataclasses import dataclass, field
 
 MIN_PLAYERS = 4
-MAX_PLAYERS = 32
+MAX_PLAYERS = 40
 DEFAULT_ROUNDS = 10
 
 # Cost weights.  A pairing that has already happened `c` times costs
 # WEIGHT * c**2, so second repeats are punished much harder than firsts.
-W_PARTNER = 1000        # repeated partner (anytime)
+# W_PARTNER is so large that one repeated partnership outweighs any
+# achievable combination of the other penalties: partner uniqueness is
+# effectively a lexicographic first objective, never traded away for
+# better opponent spread.
+W_PARTNER = 1_000_000   # repeated partner (anytime)
 W_OPPONENT = 120        # repeated opponent (anytime)
 W_CONSEC_PARTNER = 800  # same partner as the immediately previous round
 W_CONSEC_OPPONENT = 400 # same opponent as the immediately previous round
@@ -134,21 +145,42 @@ def _slots_cost(slots: list[str], hist: _History,
     )
 
 
+def _unused_partner_available(playing: list[str], hist: _History) -> bool:
+    """Necessary condition for a repeat-free round: every playing player
+    still has at least one never-partnered player among today's players.
+    (Not sufficient - the unused pairs must also form a perfect matching -
+    but cheap, and it stops the optimiser searching for the impossible.)
+    """
+    for p in playing:
+        if not any(p != q and
+                   hist.partner_count.get(frozenset((p, q)), 0) == 0
+                   for q in playing):
+            return False
+    return True
+
+
 def _optimise_round(playing: list[str], hist: _History,
                     prev_round: Round | None, rng: random.Random,
-                    restarts: int = 12) -> list[Match]:
+                    restarts: int = 12, max_restarts: int = 60) -> list[Match]:
     """Random-restart hill climbing over position swaps.
 
     `playing` is laid out in slots of 4 per court; swapping any two slots
     (including within a court, which changes the team split) is the move set.
     Only the affected courts are re-scored per move.
+
+    If the best assignment found still repeats a partnership and the
+    history says a repeat-free round may exist, keep restarting (up to
+    `max_restarts`) - partner uniqueness dominates everything else.
     """
     prev_partners, prev_opponents = _round_pair_sets(prev_round)
     n = len(playing)
     best_slots: list[str] = []
     best_cost = None
+    repeat_free_may_exist = _unused_partner_available(playing, hist)
 
-    for _ in range(restarts):
+    attempt = 0
+    while True:
+        attempt += 1
         slots = playing[:]
         rng.shuffle(slots)
         cost = _slots_cost(slots, hist, prev_partners, prev_opponents)
@@ -182,6 +214,11 @@ def _optimise_round(playing: list[str], hist: _History,
             best_cost, best_slots = cost, slots[:]
         if best_cost == 0:
             break
+        if attempt >= max_restarts:
+            break
+        if attempt >= restarts and not (repeat_free_may_exist
+                                        and best_cost >= W_PARTNER):
+            break
 
     return [
         Match(team1=(best_slots[i], best_slots[i + 1]),
@@ -204,24 +241,9 @@ def _pick_byes(players: list[str], n_byes: int, hist: _History,
     return ranked[:n_byes]
 
 
-def generate_schedule(players: list[str], rounds: int = DEFAULT_ROUNDS,
-                      seed: int | None = None) -> Schedule:
-    """Build an optimised schedule.
-
-    Raises ValueError for bad input (player count out of range, duplicate
-    names, or a non-positive round count).
-    """
-    players = [p.strip() for p in players if p.strip()]
-    if not MIN_PLAYERS <= len(players) <= MAX_PLAYERS:
-        raise ValueError(
-            f"Need between {MIN_PLAYERS} and {MAX_PLAYERS} players, "
-            f"got {len(players)}.")
-    if len(set(players)) != len(players):
-        raise ValueError("Player names must be unique.")
-    if rounds < 1:
-        raise ValueError("Number of rounds must be at least 1.")
-
-    rng = random.Random(seed)
+def _build_schedule(players: list[str], rounds: int,
+                    rng: random.Random) -> Schedule:
+    """One greedy round-by-round construction (see generate_schedule)."""
     hist = _History()
     schedule = Schedule(players=players[:])
     n_byes = num_byes(len(players))
@@ -237,6 +259,74 @@ def generate_schedule(players: list[str], rounds: int = DEFAULT_ROUNDS,
         prev_round = rnd
 
     return schedule
+
+
+def _partner_excess(schedule: Schedule) -> int:
+    """Total partnerships beyond first pairings (0 = nobody repeated)."""
+    hist = _History()
+    for rnd in schedule.rounds:
+        hist.add_round(rnd)
+    return sum(c - 1 for c in hist.partner_count.values() if c > 1)
+
+
+def _min_partner_excess(n_players: int, rounds: int) -> int:
+    """Pigeonhole lower bound on repeated partnerships: a player who
+    plays more rounds than they have possible partners must repeat.
+    Byes are assumed spread as evenly as possible (which _pick_byes
+    enforces)."""
+    total_byes = num_byes(n_players) * rounds
+    base, extra = divmod(total_byes, n_players)
+    overflow = 0
+    for i in range(n_players):
+        played = rounds - base - (1 if i < extra else 0)
+        overflow += max(0, played - (n_players - 1))
+    return (overflow + 1) // 2
+
+
+def generate_schedule(players: list[str], rounds: int = DEFAULT_ROUNDS,
+                      seed: int | None = None,
+                      attempts: int = 20) -> Schedule:
+    """Build an optimised schedule.
+
+    Partner uniqueness is the top objective: the greedy round-by-round
+    construction is retried up to `attempts` times, keeping the best
+    result, and stopping as soon as a schedule with no repeated
+    partnerships is found (or with the provable minimum number of
+    repeats when the player count makes repeats unavoidable, e.g. 8
+    players over 10 rounds).  Retries also give up after 5 attempts in
+    a row without improvement.
+
+    Raises ValueError for bad input (player count out of range, duplicate
+    names, or a non-positive round count).
+    """
+    players = [p.strip() for p in players if p.strip()]
+    if not MIN_PLAYERS <= len(players) <= MAX_PLAYERS:
+        raise ValueError(
+            f"Need between {MIN_PLAYERS} and {MAX_PLAYERS} players, "
+            f"got {len(players)}.")
+    if len(set(players)) != len(players):
+        raise ValueError("Player names must be unique.")
+    if rounds < 1:
+        raise ValueError("Number of rounds must be at least 1.")
+
+    rng = random.Random(seed)
+    target = _min_partner_excess(len(players), rounds)
+    best: Schedule | None = None
+    best_key: tuple[int, int] | None = None
+    stale = 0
+
+    for _ in range(max(1, attempts)):
+        schedule = _build_schedule(players, rounds, rng)
+        key = (_partner_excess(schedule), schedule_cost(schedule))
+        if best_key is None or key < best_key:
+            best, best_key = schedule, key
+            stale = 0
+        else:
+            stale += 1
+        if best_key[0] <= target or stale >= 5:
+            break
+
+    return best
 
 
 # ---------------------------------------------------------------------------

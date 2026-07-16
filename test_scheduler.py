@@ -30,7 +30,7 @@ def test_too_few_players_rejected():
 
 def test_too_many_players_rejected():
     with pytest.raises(ValueError):
-        generate_schedule(names(33))
+        generate_schedule(names(41))
 
 
 def test_duplicate_names_rejected():
@@ -53,7 +53,8 @@ def test_blank_names_stripped():
 # Structural correctness: every round is a valid partition
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("n", [4, 5, 6, 7, 8, 12, 13, 20, 22, 31, 32])
+@pytest.mark.parametrize("n", [4, 5, 6, 7, 8, 12, 13, 20, 22, 31, 32,
+                               33, 37, 40])
 def test_round_structure(n):
     players = names(n)
     sched = generate_schedule(players, rounds=6, seed=42)
@@ -111,21 +112,36 @@ def test_no_consecutive_byes_when_avoidable():
 # Optimisation quality: partner / opponent diversity
 # ---------------------------------------------------------------------------
 
-def test_no_repeat_partners_when_plenty_of_players():
-    # 16 players x 10 rounds: 10 distinct partners out of 15 possible,
-    # so zero repeat partnerships is achievable and the optimiser
-    # should get at worst a single repeat.
-    sched = generate_schedule(names(16), rounds=10, seed=11)
+@pytest.mark.parametrize("seed", range(5))
+@pytest.mark.parametrize("n", [12, 13, 14, 15, 16])
+def test_no_repeat_partners_common_group_sizes(n, seed):
+    # The most common turnouts.  Over 10 rounds each player needs at
+    # most 10 distinct partners and 11+ are available, so a schedule
+    # with zero repeated partnerships exists and the optimiser must
+    # find one - partner uniqueness is the top objective.
+    sched = generate_schedule(names(n), rounds=10, seed=seed)
     stats = compute_stats(sched)
-    assert stats.max_partner_repeats <= 2
-    assert stats.repeat_partnerships <= 1
+    assert stats.repeat_partnerships == 0, (
+        f"n={n} seed={seed}: {stats.repeat_partnerships} pairs repeated")
+    assert stats.max_partner_repeats <= 1
 
 
 def test_partner_diversity_medium_group():
     # 12 players x 8 rounds: 8 partners of 11 possible.
     sched = generate_schedule(names(12), rounds=8, seed=11)
     stats = compute_stats(sched)
-    assert stats.repeat_partnerships <= 1
+    assert stats.repeat_partnerships == 0
+
+
+def test_unavoidable_repeats_hit_theoretical_minimum():
+    # 8 players x 10 rounds: only 7 possible partners each, so 12 extra
+    # partnerships are forced (pigeonhole); the optimiser should not
+    # exceed that minimum, and should spread repeats evenly.
+    sched = generate_schedule(names(8), rounds=10, seed=11)
+    stats = compute_stats(sched)
+    excess = sum(c - 1 for c in stats.partner_counts.values() if c > 1)
+    assert excess == 12
+    assert stats.max_partner_repeats <= 2
 
 
 def test_opponent_diversity_reasonable():
@@ -156,7 +172,8 @@ def test_four_players_spreads_the_three_pairings():
 
 
 @pytest.mark.parametrize("n,rounds", [(8, 10), (10, 10), (14, 10),
-                                      (20, 10), (26, 8), (32, 10)])
+                                      (20, 10), (26, 8), (32, 10),
+                                      (40, 8)])
 def test_optimised_beats_random_baseline(n, rounds):
     players = names(n)
     optimised = schedule_cost(generate_schedule(players, rounds, seed=23))

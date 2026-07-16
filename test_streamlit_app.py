@@ -44,7 +44,7 @@ def test_generate_rejects_too_few_players():
 
 def test_add_player_to_large_roster():
     """A roster bigger than MAX_PLAYERS (e.g. a whole club in players.txt)
-    must not block adding more names — the 32 cap only applies to how
+    must not block adding more names — the MAX_PLAYERS cap only applies to how
     many are ticked to play."""
     at = AppTest.from_file("streamlit_app.py", default_timeout=60)
     at.session_state["roster"] = {f"Member{i}": False for i in range(1, 62)}

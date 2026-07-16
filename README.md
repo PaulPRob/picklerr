@@ -1,6 +1,6 @@
 # RR_pickle_picker
 
-Pickleball round-robin doubles scheduler for 4–32 players, available as
+Pickleball round-robin doubles scheduler for 4–40 players, available as
 a PyQt6 desktop GUI and as a Streamlit web app. Both front ends share
 the same scheduling engine and export helpers.
 
@@ -76,12 +76,16 @@ who sat out longest ago — nobody gets a second bye until everyone has had
 one. It then searches court assignments with random-restart hill-climbing,
 minimising a weighted cost that penalises (heaviest first): repeating a
 partner, repeating a partner/opponent in consecutive rounds, and
-repeating an opponent at all.
+repeating an opponent at all. Partner uniqueness dominates the cost —
+a repeated partnership is never traded for better opponent spread — and
+the whole schedule is rebuilt several times if needed, keeping the best
+result.
 
-Typical results over 10 rounds: with 13+ players, **zero repeated
-partnerships** and no back-to-back repeat opponents; with 8 players some
-repeats are mathematically unavoidable (only 7 possible partners) but are
-spread as evenly as possible.
+Results over 10 rounds: with 12+ players, **zero repeated partnerships**
+(verified by tests across many random seeds for 12–16 players); with 8
+players some repeats are mathematically unavoidable (only 7 possible
+partners) and the optimiser achieves the provable minimum, spread as
+evenly as possible.
 
 ## Files
 
