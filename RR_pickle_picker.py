@@ -321,6 +321,8 @@ class PicklePicker(QMainWindow):
             lines.append("Repeated partnerships:")
             for (a, b), n in sorted(repeats):
                 lines.append(f"  {a} & {b}: {n} times")
+        lines.append("")
+        lines.append("RR Pickle Picker V1.0 Paul Roberts 2026")
         text = QTextEdit()
         text.setReadOnly(True)
         text.setPlainText("\n".join(lines))

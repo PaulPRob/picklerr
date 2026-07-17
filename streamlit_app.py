@@ -217,6 +217,8 @@ def _summary_tab(schedule) -> None:
         lines.append("Repeated partnerships:")
         for (a, b), count in sorted(repeats):
             lines.append(f"  {a} & {b}: {count} times")
+    lines.append("")
+    lines.append("RR Pickle Picker V1.0 Paul Roberts 2026")
     st.text("\n".join(lines))
 
 
